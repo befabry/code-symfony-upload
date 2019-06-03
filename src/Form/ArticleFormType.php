@@ -16,6 +16,8 @@ use Symfony\Component\Form\FormEvent;
 use Symfony\Component\Form\FormEvents;
 use Symfony\Component\Form\FormInterface;
 use Symfony\Component\OptionsResolver\OptionsResolver;
+use Symfony\Component\Validator\Constraints\Image;
+use Symfony\Component\Validator\Constraints\NotNull;
 
 class ArticleFormType extends AbstractType
 {
@@ -50,12 +52,26 @@ class ArticleFormType extends AbstractType
                     'Interstellar Space' => 'interstellar_space'
                 ],
                 'required' => false,
-            ])
+            ]);
+
+        $imageConstraints = [
+            new Image([
+                'maxSize' => '5M',
+            ]),
+        ];
+
+        if (!$isEdit || !$article->getImageFilename()) {
+            $imageConstraints[] = new NotNull([
+                'message' => 'Please upload an image',
+            ]);
+        }
+
+        $builder
             ->add('imageFile', FileType::class, [
                 'mapped' => false,
                 'required' => false,
-            ])
-        ;
+                'constraints' => $imageConstraints,
+            ]);
 
         if ($options['include_published_at']) {
             $builder->add('publishedAt', null, [
@@ -81,7 +97,7 @@ class ArticleFormType extends AbstractType
 
         $builder->get('location')->addEventListener(
             FormEvents::POST_SUBMIT,
-            function(FormEvent $event) {
+            function (FormEvent $event) {
                 $form = $event->getForm();
                 $this->setupSpecificLocationNameField(
                     $form->getParent(),

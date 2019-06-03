@@ -17,10 +17,9 @@
 ###< symfony/phpunit-bridge ###
 
 ###> PHPStorm ###
-.idea/
+.idea/*
 .idea/workspace.xml
 ###< PHPStorm ###
 
 
 /public/uploads
-
