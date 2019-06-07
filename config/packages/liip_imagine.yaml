@@ -5,6 +5,25 @@ liip_imagine:
 #    resolvers:
 #        default:
 #            web_path: ~
+    loaders:
+        flysystem_loader:
+            flysystem:
+                filesystem_service: oneup_flysystem.public_uploads_filesystem_filesystem
+
+    #default loader to use for all filter sets
+    data_loader: flysystem_loader
+
+    #using thumbnails cache stored
+    resolvers:
+        flysystem_resolver:
+            flysystem:
+                filesystem_service: oneup_flysystem.public_uploads_filesystem_filesystem
+                root_url:           '%uploads_base_url%'
+                cache_prefix:       media/cache
+                # visibility:         public
+
+    #default resolver for cached files
+    cache: flysystem_resolver
 
     filter_sets:
         cache: ~
@@ -21,6 +40,22 @@ liip_imagine:
                 # create a thumbnail: set size to 120x90 and use the "outbound" mode
                 # to crop the image when the size ratio of the input differs
                 thumbnail: { size: [200, 200], mode: outbound, allow_upscale: true }
+
+                # create a 2px black border: center the thumbnail on a black background
+                # 4px larger to create a 2px border around the final image
+#                background: { size: [124, 94], position: center, color: '#000000' }
+        # the name of the "filter set"
+        squared_thumbnail_medium:
+
+            # adjust the image quality to 75%
+            quality: 100
+
+            # list of transformations to apply (the "filters")
+            filters:
+
+                # create a thumbnail: set size to 120x90 and use the "outbound" mode
+                # to crop the image when the size ratio of the input differs
+                thumbnail: { size: [500, 500], mode: outbound, allow_upscale: true }
 
                 # create a 2px black border: center the thumbnail on a black background
                 # 4px larger to create a 2px border around the final image
