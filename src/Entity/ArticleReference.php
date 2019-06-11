@@ -2,7 +2,9 @@
 
 namespace App\Entity;
 
+use App\Service\UploaderHelper;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Serializer\Annotation\Groups;
 
 /**
  * @ORM\Entity(repositoryClass="App\Repository\ArticleReferenceRepository")
@@ -13,6 +15,7 @@ class ArticleReference
      * @ORM\Id()
      * @ORM\GeneratedValue()
      * @ORM\Column(type="integer")
+     * @Groups("main")
      */
     private $id;
 
@@ -24,16 +27,19 @@ class ArticleReference
 
     /**
      * @ORM\Column(type="string", length=255)
+     * @Groups("main")
      */
     private $filename;
 
     /**
      * @ORM\Column(type="string", length=255)
+     * @Groups("main")
      */
     private $originalFilename;
 
     /**
      * @ORM\Column(type="string", length=255)
+     * @Groups("main")
      */
     private $mimeType;
 
@@ -93,5 +99,10 @@ class ArticleReference
         $this->mimeType = $mimeType;
 
         return $this;
+    }
+
+    public function getFilePath(): string
+    {
+        return  UploaderHelper::ARTICLE_REFERENCE . '/' . $this->getFilename();
     }
 }

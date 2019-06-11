@@ -189,7 +189,7 @@ class Article
         return $this;
     }
 
-    public function getImagePath()
+    public function getImagePath(): string
     {
         return  UploaderHelper::ARTICLE_IMAGE . '/' . $this->getImageFilename();
     }

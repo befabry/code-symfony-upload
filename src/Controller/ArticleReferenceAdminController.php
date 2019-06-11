@@ -8,7 +8,9 @@ use App\Service\UploaderHelper;
 use Doctrine\ORM\EntityManagerInterface;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\IsGranted;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
+use Symfony\Component\HttpFoundation\HeaderUtils;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Routing\Annotation\Route;
 use Symfony\Component\Validator\Constraints\File;
 use Symfony\Component\Validator\Constraints\NotBlank;
@@ -28,6 +30,7 @@ class ArticleReferenceAdminController extends BaseController
     {
         /** @var UploadedFile $uploadedFile */
         $uploadedFile = $request->files->get('reference');
+        dump($uploadedFile);
 
         //mimeTypes, see MimeTypeExtensionGuesser.php
         $violations = $validator->validate(
@@ -54,13 +57,14 @@ class ArticleReferenceAdminController extends BaseController
         );
 
         if ($violations->count() > 0) {
-            /** @var ConstraintViolation $violation */
-            $violation = $violations[0];
-            $this->addFlash('error', $violation->getMessage());
-
-            return $this->redirectToRoute('admin_article_edit', [
-                'id' => $article->getId(),
-            ]);
+//            /** @var ConstraintViolation $violation */
+//            $violation = $violations[0];
+//            $this->addFlash('error', $violation->getMessage());
+//
+//            return $this->redirectToRoute('admin_article_edit', [
+//                'id' => $article->getId(),
+//            ]);
+            return $this->json($violations, 400);
         }
 
         $filename = $uploaderHelper->uploadArticleReference($uploadedFile);
@@ -73,9 +77,14 @@ class ArticleReferenceAdminController extends BaseController
         $entityManager->persist($articleReference);
         $entityManager->flush();
 
-        return $this->redirectToRoute('admin_article_edit', [
-            'id' => $article->getId(),
-        ]);
+        return $this->json(
+            $articleReference,
+            201,
+            [],
+            [
+                'groups' => ['main']
+            ]
+        );
     }
 
     /**
@@ -84,12 +93,54 @@ class ArticleReferenceAdminController extends BaseController
      *     name="admin_article_download_reference",
      *     methods={"GET"}
      *     )
+     *
+     * @param ArticleReference $reference
+     * @param UploaderHelper $uploaderHelper
+     * @return StreamedResponse
      */
-    public function downloadArticleReference(ArticleReference $articleReference)
+    public function downloadArticleReference(ArticleReference $reference, UploaderHelper $uploaderHelper)
     {
-        //IsGranted manuellement car on n'a pas accès à l'article directement
-        $article = $articleReference->getArticle();
+        //IsGranted manually because we do not have access to it directly
+        $article = $reference->getArticle();
         $this->denyAccessUnlessGranted('MANAGE', $article);
-        dd($articleReference);
+
+        //Avoids heating memory
+        $response = new StreamedResponse(function () use ($reference, $uploaderHelper) {
+            //anything we write in this stream will be echoed out
+            $outputStream = fopen('php://output', 'wb');
+            $fileStream = $uploaderHelper->readStream($reference->getFilePath(), false);
+
+            stream_copy_to_stream($fileStream, $outputStream);
+        });
+
+        $response->headers->set('Content-Type', $reference->getMimeType());
+
+        //force the download of the file
+        $disposition = HeaderUtils::makeDisposition(
+            HeaderUtils::DISPOSITION_ATTACHMENT,
+            $reference->getOriginalFilename()
+        );
+        $response->headers->set('Content-Disposition', $disposition);
+
+        return $response;
+    }
+
+    /**
+     * @Route(
+     *     "admin/article/{id}/references",
+     *     methods={"GET"},
+     *     name="admin_article_references_list"
+     * )
+     * @IsGranted("MANAGE", subject="article")
+     */
+    public function getArticleReference(Article $article)
+    {
+        return $this->json(
+            $article->getArticleReferences(),
+            200,
+            [],
+            [
+                'groups' => ['main'],
+            ]);
     }
 }
