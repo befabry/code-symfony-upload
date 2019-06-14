@@ -10,13 +10,19 @@ use Sensio\Bundle\FrameworkExtraBundle\Configuration\IsGranted;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\HeaderUtils;
 use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 use Symfony\Component\Routing\Annotation\Route;
+use Symfony\Component\Serializer\SerializerInterface;
 use Symfony\Component\Validator\Constraints\File;
 use Symfony\Component\Validator\Constraints\NotBlank;
 use Symfony\Component\Validator\ConstraintViolation;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
 
+/**
+ * Class ArticleReferenceAdminController
+ * @package App\Controller
+ */
 class ArticleReferenceAdminController extends BaseController
 {
     /**
@@ -142,5 +148,77 @@ class ArticleReferenceAdminController extends BaseController
             [
                 'groups' => ['main'],
             ]);
+    }
+
+    /**
+     * @param ArticleReference $reference
+     * @param UploaderHelper $uploaderHelper
+     * @param EntityManagerInterface $entityManager
+     *
+     * @Route(
+     *     "/admin/article/references/{id}",
+     *     name="admin_article_reference_delete",
+     *     methods={"DELETE"}
+     * )
+     *
+     * @return Response
+     * @throws \League\Flysystem\FileNotFoundException
+     */
+    public function deleteArticleReference(ArticleReference $reference, UploaderHelper $uploaderHelper, EntityManagerInterface $entityManager)
+    {
+        //IsGranted manually because we do not have access to it directly
+        $article = $reference->getArticle();
+        $this->denyAccessUnlessGranted('MANAGE', $article);
+
+        $entityManager->remove($reference);
+        $entityManager->flush();
+
+        $uploaderHelper->deleteFile($reference->getFilePath(), false);
+
+        return new Response(null, Response::HTTP_NO_CONTENT);
+    }
+
+    /**
+     * @param ArticleReference $reference
+     * @param UploaderHelper $uploaderHelper
+     * @param EntityManagerInterface $entityManager
+     * @param SerializerInterface $serializer
+     * @param Request $request
+     *
+     * @Route(
+     *     "/admin/article/references/{id}",
+     *     name="admin_article_reference_update",
+     *     methods={"PUT"}
+     * )
+     *
+     * @return \Symfony\Component\HttpFoundation\JsonResponse
+     */
+    public function updateArticleReference(ArticleReference $reference, UploaderHelper $uploaderHelper, EntityManagerInterface $entityManager, SerializerInterface $serializer, Request $request)
+    {
+        //IsGranted manually because we do not have access to it directly
+        $article = $reference->getArticle();
+        $this->denyAccessUnlessGranted('MANAGE', $article);
+
+        $serializer->deserialize(
+           $request->getContent(),
+           ArticleReference::class,
+            'json',
+            [
+                'object_to_populate' => $reference,
+                'groups' => ['input'],
+            ]
+        );
+
+        $entityManager->persist($reference);
+        $entityManager->flush();
+
+        return $this->json(
+            $reference,
+            200,
+            [],
+            [
+                'groups' => ['main']
+            ]
+        );
     }
 }
