@@ -61,10 +61,18 @@ class ReferenceList {
     constructor($element) {
         this.$element = $element;
         this.references = [];
+        this.sortable = Sortable.create(this.$element[0], {
+            handle: '.drag-handle',
+            animation: 150,
+        });
         this.render();
 
         this.$element.on('click', '.js-reference-delete', (event) => {
             this.handleReferenceDelete(event);
+        });
+
+        this.$element.on('blur', '.js-edit-filename', (event) => {
+            this.handleReferenceEditFilename(event);
         });
 
         $.ajax({
@@ -85,8 +93,6 @@ class ReferenceList {
         const id = $li.data('id');
         $li.addClass('disabled');
 
-        console.log('test');
-
         $.ajax({
             url: '/admin/article/references/'+id,
             method: 'DELETE'
@@ -98,11 +104,35 @@ class ReferenceList {
         });
     }
 
+    handleReferenceEditFilename(event){
+        const id = this.retrieveId(event);
+
+        const reference = this.references.find(reference => {
+           return reference.id === id;
+        });
+
+        const newOriginalFilename = $(event.currentTarget).val();
+        if(reference.originalFilename !== newOriginalFilename){
+            reference.originalFilename = newOriginalFilename;
+            $.ajax({
+                url: '/admin/article/references/'+id,
+                method: 'PUT',
+                data: JSON.stringify(reference),
+            });
+        }
+    }
+
+    retrieveId(event){
+        const $li = $(event.currentTarget).closest('.list-group-item');
+        return $li.data('id');
+    }
+
     render() {
         const itemsHtml = this.references.map(reference => {
             return `
 <li class="list-group-item d-flex justify-content-between align-items-center" data-id="${reference.id}">
-    ${reference.originalFilename}
+    <span class="drag-handle fa fa-reorder"></span>
+    <input type="text" value="${reference.originalFilename}" class="form-control js-edit-filename" style="width: auto;">
     <span>
         <a href="/admin/article/references/${reference.id}/download" class="btn btn-link btn-sm" style="vertical-align: middle;"><span class="fa fa-download"></span></a>
         <button class="js-reference-delete btn btn-link btn-sm"><span class="fa fa-trash"></span></button>

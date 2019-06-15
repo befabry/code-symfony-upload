@@ -184,6 +184,7 @@ class ArticleReferenceAdminController extends BaseController
      * @param EntityManagerInterface $entityManager
      * @param SerializerInterface $serializer
      * @param Request $request
+     * @param ValidatorInterface $validator
      *
      * @Route(
      *     "/admin/article/references/{id}",
@@ -193,7 +194,7 @@ class ArticleReferenceAdminController extends BaseController
      *
      * @return \Symfony\Component\HttpFoundation\JsonResponse
      */
-    public function updateArticleReference(ArticleReference $reference, UploaderHelper $uploaderHelper, EntityManagerInterface $entityManager, SerializerInterface $serializer, Request $request)
+    public function updateArticleReference(ArticleReference $reference, UploaderHelper $uploaderHelper, EntityManagerInterface $entityManager, SerializerInterface $serializer, Request $request, ValidatorInterface $validator)
     {
         //IsGranted manually because we do not have access to it directly
         $article = $reference->getArticle();
@@ -208,6 +209,11 @@ class ArticleReferenceAdminController extends BaseController
                 'groups' => ['input'],
             ]
         );
+
+        $violations = $validator->validate($reference);
+        if($violations->count() > 0){
+            return $this->json($violations, 400);
+        }
 
         $entityManager->persist($reference);
         $entityManager->flush();
