@@ -36,7 +36,6 @@ class ArticleReferenceAdminController extends BaseController
     {
         /** @var UploadedFile $uploadedFile */
         $uploadedFile = $request->files->get('reference');
-        dump($uploadedFile);
 
         //mimeTypes, see MimeTypeExtensionGuesser.php
         $violations = $validator->validate(
@@ -85,7 +84,7 @@ class ArticleReferenceAdminController extends BaseController
 
         return $this->json(
             $articleReference,
-            201,
+            Response::HTTP_CREATED,
             [],
             [
                 'groups' => ['main']
@@ -132,6 +131,9 @@ class ArticleReferenceAdminController extends BaseController
     }
 
     /**
+     * @param Article $article
+     * @return \Symfony\Component\HttpFoundation\JsonResponse
+     *
      * @Route(
      *     "admin/article/{id}/references",
      *     methods={"GET"},
@@ -141,6 +143,44 @@ class ArticleReferenceAdminController extends BaseController
      */
     public function getArticleReference(Article $article)
     {
+        return $this->json(
+            $article->getArticleReferences(),
+            Response::HTTP_OK,
+            [],
+            [
+                'groups' => ['main'],
+            ]);
+    }
+
+    /**
+     * @param Article $article
+     * @param Request $request
+     * @param EntityManagerInterface $entityManager
+     * @return \Symfony\Component\HttpFoundation\JsonResponse
+     *
+     * @Route(
+     *     "admin/article/{id}/references/reorder",
+     *     methods={"POST"},
+     *     name="admin_article_references_reorder"
+     * )
+     * @IsGranted("MANAGE", subject="article")
+     */
+    public function reorderArticleReference(Article $article, Request $request, EntityManagerInterface $entityManager)
+    {
+        $orderedIds = json_decode($request->getContent(), true);
+
+        if($orderedIds === false){
+            return $this->json(['detail' => 'Invalid body'], Response::HTTP_BAD_REQUEST);
+        }
+
+        //from (position)=>(id) to (id)=>(position)
+        $orderedIds = array_flip($orderedIds);
+        foreach ($article->getArticleReferences() as $reference){
+            $reference->setPosition($orderedIds[$reference->getId()]);
+        }
+
+        $entityManager->flush();
+
         return $this->json(
             $article->getArticleReferences(),
             200,
@@ -220,7 +260,7 @@ class ArticleReferenceAdminController extends BaseController
 
         return $this->json(
             $reference,
-            200,
+            Response::HTTP_OK,
             [],
             [
                 'groups' => ['main']
