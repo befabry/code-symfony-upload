@@ -5,6 +5,7 @@ namespace App\Service;
 
 
 use Gedmo\Sluggable\Util\Urlizer;
+use League\Flysystem\AdapterInterface;
 use League\Flysystem\FileNotFoundException;
 use League\Flysystem\FilesystemInterface;
 use Psr\Log\LoggerInterface;
@@ -36,15 +37,15 @@ class UploaderHelper
     /**
      * @var FilesystemInterface
      */
-    private $privateFilesystem;
+//    private $privateFilesystem;
 
-    public function __construct(FilesystemInterface $publicUploadFilesystem, FilesystemInterface $privateUploadFilesystem, RequestStackContext $requestStackContext, LoggerInterface $logger, string $uploadedAssetsBaseUrl)
+    public function __construct(FilesystemInterface $publicUploadFilesystem, RequestStackContext $requestStackContext, LoggerInterface $logger, string $uploadedAssetsBaseUrl)
     {
         $this->requestStackContext = $requestStackContext;
         $this->filesystem = $publicUploadFilesystem;
         $this->logger = $logger;
         $this->publicAssetsBaseUrl = $uploadedAssetsBaseUrl;
-        $this->privateFilesystem = $privateUploadFilesystem;
+//        $this->privateFilesystem = $privateUploadFilesystem;
     }
 
     public function uploadedArticleImage(File $file, ?string $existingFilename): string
@@ -73,20 +74,39 @@ class UploaderHelper
 
     public function getPublicPath(string $path): string
     {
-        return $this->requestStackContext->getBasePath().$this->publicAssetsBaseUrl.'/'. $path;
+        $fullPath = $this->publicAssetsBaseUrl.$path;
+
+        //if it's already absolute, just return
+        if(strpos($fullPath, '://')){
+            return $fullPath;
+        }
+
+        return $this->requestStackContext->getBasePath().$fullPath;
     }
+
+
+    //Before S3
+//    public function readStream(string $path, bool $isPublic)
+//    {
+//        $filesystem = $isPublic ? $this->filesystem : $this->privateFilesystem;
+//
+//        $resource = $filesystem->readStream($path);
+//
+//        if($resource === false){
+//            throw new \Exception(sprintf('Error opening stream for "%s"', $path));
+//        }
+//
+//        return $resource;
+//    }
 
     /**
      * @param string $path
-     * @param bool $isPublic
      * @return resource
      * @throws FileNotFoundException
      */
-    public function readStream(string $path, bool $isPublic)
+    public function readStream(string $path)
     {
-        $filesystem = $isPublic ? $this->filesystem : $this->privateFilesystem;
-
-        $resource = $filesystem->readStream($path);
+        $resource = $this->filesystem->readStream($path);
 
         if($resource === false){
             throw new \Exception(sprintf('Error opening stream for "%s"', $path));
@@ -97,20 +117,16 @@ class UploaderHelper
 
     /**
      * @param string $path
-     * @param bool $isPublic
      * @throws FileNotFoundException
      */
-    public function deleteFile(string $path, bool $isPublic)
+    public function deleteFile(string $path)
     {
-        $filesystem = $isPublic ? $this->filesystem : $this->privateFilesystem;
-
-        $result = $filesystem->delete($path);
+        //Before S3 see above
+        $result = $this->filesystem->delete($path);
 
         if($result === false){
             throw new \Exception(sprintf('Error deleting "%s"', $path));
         }
-
-//        return $resource;
     }
 
     private function uploadFile(File $file, string $directory, bool $isPublic): string
@@ -123,13 +139,25 @@ class UploaderHelper
 
         $newFilename = Urlizer::urlize(pathinfo($originalFileName, PATHINFO_FILENAME)).'-'.uniqid().'.'.$file->guessExtension();
 
-        $filesystem = $isPublic ? $this->filesystem : $this->privateFilesystem;
+        //Local
+        /*$filesystem = $isPublic ? $this->filesystem : $this->privateFilesystem;
 
         $stream = fopen($file->getPathname(), 'r');
         //write use too much memory by loading the file. writeStream use a stream.
         $result = $filesystem->writeStream(
             $directory.'/'.$newFilename,
             $stream
+        );*/
+
+        //S3
+        $stream = fopen($file->getPathname(), 'r');
+        //write use too much memory by loading the file. writeStream use a stream.
+        $result = $this->filesystem->writeStream(
+            $directory.'/'.$newFilename,
+            $stream,
+            [
+                'visibility' => $isPublic ? AdapterInterface::VISIBILITY_PUBLIC : AdapterInterface::VISIBILITY_PRIVATE,
+            ]
         );
 
         if($result === false){

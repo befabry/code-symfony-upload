@@ -119,14 +119,17 @@ class ReferenceList {
         });
 
         const newOriginalFilename = $(event.currentTarget).val();
-        if(reference.originalFilename !== newOriginalFilename){
-            reference.originalFilename = newOriginalFilename;
-            $.ajax({
-                url: '/admin/article/references/'+id,
-                method: 'PUT',
-                data: JSON.stringify(reference),
-            });
+
+        if(reference.originalFilename === newOriginalFilename){
+            return;
         }
+
+        reference.originalFilename = newOriginalFilename;
+        $.ajax({
+            url: '/admin/article/references/'+id,
+            method: 'PUT',
+            data: JSON.stringify(reference),
+        });
     }
 
     retrieveId(event){

@@ -2,13 +2,17 @@
 
 namespace App\Controller;
 
+use App\API\ArticleReferenceUploadApiModel;
 use App\Entity\Article;
 use App\Entity\ArticleReference;
 use App\Service\UploaderHelper;
+use Aws\S3\S3Client;
 use Doctrine\ORM\EntityManagerInterface;
 use Sensio\Bundle\FrameworkExtraBundle\Configuration\IsGranted;
+use Symfony\Component\HttpFoundation\File\File as FileObject;
 use Symfony\Component\HttpFoundation\File\UploadedFile;
 use Symfony\Component\HttpFoundation\HeaderUtils;
+use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -25,17 +29,48 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
  */
 class ArticleReferenceAdminController extends BaseController
 {
+
     /**
+     * @param Article $article
+     * @param Request $request
+     * @param UploaderHelper $uploaderHelper
+     * @param EntityManagerInterface $entityManager
+     * @param ValidatorInterface $validator
+     * @param SerializerInterface $serializer
+     * @return \Symfony\Component\HttpFoundation\JsonResponse
+     *
      * @Route("/admin/article/{id}/reference",
      *     name="admin_article_add_reference",
      *     methods={"POST"}
      * )
+     *
      * @IsGranted("MANAGE", subject="article")
      */
-    public function uploadArticleReference(Article $article, Request $request, UploaderHelper $uploaderHelper, EntityManagerInterface $entityManager, ValidatorInterface $validator)
+    public function uploadArticleReference(Article $article, Request $request, UploaderHelper $uploaderHelper, EntityManagerInterface $entityManager, ValidatorInterface $validator, SerializerInterface $serializer)
     {
-        /** @var UploadedFile $uploadedFile */
-        $uploadedFile = $request->files->get('reference');
+        if($request->headers->get('Content-Type') === 'application/json'){
+            /** @var ArticleReferenceUploadApiModel $uploadApiModel */
+            $uploadApiModel = $serializer->deserialize(
+                $request->getContent(),
+                ArticleReferenceUploadApiModel::class,
+                'json'
+            );
+
+            $violations = $validator->validate($uploadApiModel);
+            if($violations->count() > 0){
+                return $this->json($violations, Response::HTTP_BAD_REQUEST);
+            }
+
+            $tmpPath = sys_get_temp_dir().'/sf_upload'.uniqid();
+            file_put_contents($tmpPath, $uploadApiModel->getDecodedData());
+
+            $uploadedFile = new FileObject($tmpPath);
+            $originalName = $uploadApiModel->filename;
+        } else {
+            /** @var UploadedFile $uploadedFile */
+            $uploadedFile = $request->files->get('reference');
+            $originalName = $uploadedFile->getClientOriginalName();
+        }
 
         //mimeTypes, see MimeTypeExtensionGuesser.php
         $violations = $validator->validate(
@@ -76,8 +111,13 @@ class ArticleReferenceAdminController extends BaseController
 
         $articleReference = new ArticleReference($article);
         $articleReference->setFilename($filename);
-        $articleReference->setOriginalFilename($uploadedFile->getClientOriginalName() ?? $filename);
+        $articleReference->setOriginalFilename($originalName ?? $filename);
         $articleReference->setMimeType($uploadedFile->getMimeType() ?? 'application/octet-stream');
+
+        //Remove the temporary file created if JSON
+        if(is_file($uploadedFile->getPathname())){
+            unlink($uploadedFile->getPathname());
+        }
 
         $entityManager->persist($articleReference);
         $entityManager->flush();
@@ -93,42 +133,71 @@ class ArticleReferenceAdminController extends BaseController
     }
 
     /**
+     * @param ArticleReference $reference
+     * @param S3Client $s3Client
+     * @param string $s3BucketName
+     * @return RedirectResponse
+     *
      * @Route(
      *     "/admin/article/references/{id}/download",
      *     name="admin_article_download_reference",
      *     methods={"GET"}
      *     )
-     *
-     * @param ArticleReference $reference
-     * @param UploaderHelper $uploaderHelper
-     * @return StreamedResponse
      */
-    public function downloadArticleReference(ArticleReference $reference, UploaderHelper $uploaderHelper)
+    public function downloadArticleReference(ArticleReference $reference, S3Client $s3Client, string $s3BucketName)
     {
         //IsGranted manually because we do not have access to it directly
         $article = $reference->getArticle();
         $this->denyAccessUnlessGranted('MANAGE', $article);
 
-        //Avoids heating memory
-        $response = new StreamedResponse(function () use ($reference, $uploaderHelper) {
-            //anything we write in this stream will be echoed out
-            $outputStream = fopen('php://output', 'wb');
-            $fileStream = $uploaderHelper->readStream($reference->getFilePath(), false);
-
-            stream_copy_to_stream($fileStream, $outputStream);
-        });
-
-        $response->headers->set('Content-Type', $reference->getMimeType());
-
-        //force the download of the file
         $disposition = HeaderUtils::makeDisposition(
             HeaderUtils::DISPOSITION_ATTACHMENT,
             $reference->getOriginalFilename()
         );
-        $response->headers->set('Content-Disposition', $disposition);
 
-        return $response;
+        //Creating a presigned URL
+        $cmd = $s3Client->getCommand('GetObject', [
+            'Bucket' => $s3BucketName,
+            'Key' => $reference->getFilePath(),
+            'ResponseContentType' => $reference->getMimeType(),
+            'ResponseContentDisposition' => $disposition,
+
+        ]);
+        $request = $s3Client->createPresignedRequest($cmd, '+5 minutes');
+
+        // Get the actual presigned-url
+        $presignedUrl = (string)$request->getUri();
+
+        return new RedirectResponse($presignedUrl);
     }
+
+//    Before S3
+//    public function downloadArticleReference(ArticleReference $reference, UploaderHelper $uploaderHelper)
+//    {
+//        //IsGranted manually because we do not have access to it directly
+//        $article = $reference->getArticle();
+//        $this->denyAccessUnlessGranted('MANAGE', $article);
+//
+//        //Avoids heating memory
+//        $response = new StreamedResponse(function () use ($reference, $uploaderHelper) {
+//            //anything we write in this stream will be echoed out
+//            $outputStream = fopen('php://output', 'wb');
+//            $fileStream = $uploaderHelper->readStream($reference->getFilePath());
+//
+//            stream_copy_to_stream($fileStream, $outputStream);
+//        });
+//
+//        $response->headers->set('Content-Type', $reference->getMimeType());
+//
+//        //force the download of the file
+//        $disposition = HeaderUtils::makeDisposition(
+//            HeaderUtils::DISPOSITION_ATTACHMENT,
+//            $reference->getOriginalFilename()
+//        );
+//        $response->headers->set('Content-Disposition', $disposition);
+//
+//        return $response;
+//    }
 
     /**
      * @param Article $article
@@ -213,7 +282,7 @@ class ArticleReferenceAdminController extends BaseController
         $entityManager->remove($reference);
         $entityManager->flush();
 
-        $uploaderHelper->deleteFile($reference->getFilePath(), false);
+        $uploaderHelper->deleteFile($reference->getFilePath());
 
         return new Response(null, Response::HTTP_NO_CONTENT);
     }

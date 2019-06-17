@@ -17,8 +17,8 @@
 ###< symfony/phpunit-bridge ###
 
 ###> PHPStorm ###
-.idea/*
-.idea/workspace.xml
+/.idea/*
+/.idea/workspace.xml
 ###< PHPStorm ###
 
 ###> liip/imagine-bundle ###
